@@ -1,0 +1,625 @@
+openapi: 3.0.3
+info:
+  title: Travel-Service API
+  version: 1.0.0
+servers:
+  - url: https://api.travel-service.com
+paths:
+  /trips/{tripId}/sync:
+    post:
+      tags:
+        - Sync
+      summary: Синхронизировать оффлайн-изменения
+      description: >
+        Принимает пакет локальных изменений пользователя и запускает процесс
+        сопоставления с серверным состоянием поездки
+      operationId: syncChanges
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncRequest'
+      responses:
+        '202':
+          description: Пакет изменений принят в обработку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncAcceptedResponse'
+        '409':
+          description: Обнаружены конфликты, требуется ручное вмешательство
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictDetectedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/TripNotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /trips/{tripId}/conflicts:
+    get:
+      tags:
+        - Conflicts
+      summary: Получить список конфликтов по поездке
+      description: Возвращает активные конфликты, обнаруженные при синхронизации.
+      operationId: listTripConflicts
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - name: status
+          in: query
+          required: false
+          description: Фильтр по статусу конфликта
+          schema:
+            type: string
+            enum: [open, resolved]
+            default: open
+      responses:
+        '200':
+          description: Список конфликтов получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/TripNotFound'
+
+  /trips/{tripId}/conflicts/{conflictId}:
+    get:
+      tags:
+        - Conflicts
+      summary: Получить детали конфликта
+      description: >
+        Возвращает данные конфликта, включая серверную и клиентскую версии,
+        а также доступные стратегии разрешения.
+      operationId: getConflictDetails
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/ConflictId'
+      responses:
+        '200':
+          description: Детали конфликта получены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictDetailsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ConflictNotFound'
+
+  /trips/{tripId}/conflicts/{conflictId}/resolve:
+    post:
+      tags:
+        - Conflicts
+      summary: Разрешить конфликт
+      description: >
+        Применяет выбранную пользователем стратегию разрешения конфликта и
+        обновляет основную ветку плана поездки.
+      operationId: resolveConflict
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/ConflictId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveConflictRequest'
+      responses:
+        '200':
+          description: Конфликт успешно разрешен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveConflictResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ConflictNotFound'
+        '409':
+          description: Конфликт уже разрешен другим участником
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /trips/{tripId}/bookings:
+    post:
+      tags:
+        - Bookings
+      summary: Инициировать бронирование
+      description: >
+        Инициирует бронирование утвержденного элемента маршрута через внешний сервис.
+        На время обработки элемент может быть заблокирован от редактирования.
+      operationId: createBooking
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '202':
+          description: Бронирование принято в обработку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/TripNotFound'
+        '409':
+          description: Элемент уже заблокирован или недоступен для бронирования
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /trips/{tripId}/bookings/{bookingId}:
+    get:
+      tags:
+        - Bookings
+      summary: Получить статус бронирования
+      description: >
+        Возвращает текущее состояние бронирования: в обработке, подтверждено,
+        ошибка, требуется действие пользователя.
+      operationId: getBookingStatus
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Статус бронирования получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/BookingNotFound'
+
+components:
+  parameters:
+    TripId:
+      name: tripId
+      in: path
+      required: true
+      description: Идентификатор поездки
+      schema:
+        type: string
+        format: uuid
+
+    ConflictId:
+      name: conflictId
+      in: path
+      required: true
+      description: Идентификатор конфликта
+      schema:
+        type: string
+        format: uuid
+
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      description: Идентификатор бронирования
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Пользователь не авторизован
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: Недостаточно прав для выполнения операции
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ValidationError:
+      description: Ошибка валидации данных
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ServiceUnavailable:
+      description: Временная недоступность сервиса или внешнего API
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    TripNotFound:
+      description: Поездка не найдена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ConflictNotFound:
+      description: Конфликт не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    BookingNotFound:
+      description: Бронирование не найдено
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    SyncRequest:
+      type: object
+      required:
+        - userId
+        - clientVersion
+        - operations
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: Идентификатор пользователя, инициировавшего синхронизацию
+        clientVersion:
+          type: integer
+          minimum: 0
+          description: Последняя известная пользователю версия поездки
+        operations:
+          type: array
+          minItems: 1
+          description: Пакет локальных операций пользователя
+          items:
+            $ref: '#/components/schemas/SyncOperation'
+
+    SyncOperation:
+      type: object
+      required:
+        - operationId
+        - entityType
+        - entityId
+        - action
+        - timestamp
+      properties:
+        operationId:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+          enum: [item, option]
+        entityId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [create, update, delete, select]
+        timestamp:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+          description: Данные изменения
+
+    SyncAcceptedResponse:
+      type: object
+      required:
+        - syncId
+        - status
+      properties:
+        syncId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [accepted, processing]
+        tripVersion:
+          type: integer
+          minimum: 0
+        message:
+          type: string
+          example: Изменения приняты в обработку
+
+    ConflictDetectedResponse:
+      type: object
+      required:
+        - syncId
+        - status
+        - conflicts
+      properties:
+        syncId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [conflict_detected]
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConflictSummary'
+
+    ConflictListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConflictSummary'
+
+    ConflictSummary:
+      type: object
+      required:
+        - conflictId
+        - tripId
+        - itemId
+        - status
+        - conflictType
+        - detectedAt
+      properties:
+        conflictId:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [open, resolved]
+        conflictType:
+          type: string
+          enum:
+            - concurrent_update
+            - delete_vs_update
+            - stale_version
+            - option_selection_conflict
+        detectedAt:
+          type: string
+          format: date-time
+        title:
+          type: string
+          example: Конфликт редактирования рейса
+
+    ConflictDetailsResponse:
+      type: object
+      required:
+        - conflict
+        - serverVersion
+        - clientVersion
+        - availableStrategies
+      properties:
+        conflict:
+          $ref: '#/components/schemas/ConflictSummary'
+        serverVersion:
+          $ref: '#/components/schemas/ConflictVersion'
+        clientVersion:
+          $ref: '#/components/schemas/ConflictVersion'
+        availableStrategies:
+          type: array
+          items:
+            type: string
+            enum: [keep_server, keep_client, keep_both, manual_merge]
+
+    ConflictVersion:
+      type: object
+      required:
+        - version
+        - data
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        data:
+          type: object
+          additionalProperties: true
+        modifiedBy:
+          type: string
+          format: uuid
+        modifiedAt:
+          type: string
+          format: date-time
+
+    ResolveConflictRequest:
+      type: object
+      required:
+        - strategy
+        - resolvedBy
+      properties:
+        strategy:
+          type: string
+          enum: [keep_server, keep_client, keep_both, manual_merge]
+        resolvedBy:
+          type: string
+          format: uuid
+        mergedPayload:
+          type: object
+          additionalProperties: true
+          description: >
+            Обязателен для стратегии manual_merge. Содержит итоговую версию данных.
+
+    ResolveConflictResponse:
+      type: object
+      required:
+        - conflictId
+        - status
+        - resolution
+      properties:
+        conflictId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [resolved]
+        resolution:
+          type: string
+          enum: [keep_server, keep_client, keep_both, manual_merge]
+        tripVersion:
+          type: integer
+          minimum: 0
+        message:
+          type: string
+          example: Конфликт успешно разрешен
+
+    CreateBookingRequest:
+      type: object
+      required:
+        - itemId
+        - userId
+        - provider
+      properties:
+        itemId:
+          type: string
+          format: uuid
+          description: Идентификатор утвержденного элемента маршрута
+        userId:
+          type: string
+          format: uuid
+          description: Идентификатор пользователя с правами бронирования
+        provider:
+          type: string
+          description: Код внешнего сервиса бронирования
+          example: booking_com
+        passportDocumentId:
+          type: string
+          format: uuid
+          description: Идентификатор паспортных данных в защищенном хранилище
+        paymentMethodId:
+          type: string
+          format: uuid
+          description: Идентификатор способа оплаты
+        idempotencyKey:
+          type: string
+          description: Ключ идемпотентности для защиты от повторного создания бронирования
+
+    BookingAcceptedResponse:
+      type: object
+      required:
+        - bookingId
+        - status
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [processing]
+        itemId:
+          type: string
+          format: uuid
+        message:
+          type: string
+          example: Бронирование принято в обработку
+
+    BookingStatusResponse:
+      type: object
+      required:
+        - bookingId
+        - tripId
+        - itemId
+        - status
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        tripId:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - processing
+            - confirmed
+            - failed
+            - action_required
+        providerBookingReference:
+          type: string
+          description: Номер бронирования у внешнего провайдера
+        tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/TicketInfo'
+        failureReason:
+          type: string
+          example: Внешний сервис временно недоступен
+        updatedAt:
+          type: string
+          format: date-time
+
+    TicketInfo:
+      type: object
+      required:
+        - type
+        - url
+      properties:
+        type:
+          type: string
+          example: eticket
+        url:
+          type: string
+          format: uri
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          example: CONFLICT_ALREADY_RESOLVED
+        message:
+          type: string
+          example: Конфликт уже разрешен другим участником
+        details:
+          type: object
+          additionalProperties: true
